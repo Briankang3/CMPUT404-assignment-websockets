@@ -26,18 +26,12 @@ app = Flask(__name__)
 sockets = Sockets(app)
 app.debug = True
 
-clients=[]
-
-def send_to_all(msg):
-    for client in clients:
-        client.push(msg)
-
 class Client:
     # gevent Queue for concurrency
     def __init__(self):
         self.queue = queue.Queue()
 
-    def push(self, v):
+    def put(self, v):
         self.queue.put_nowait(v)
 
     def get(self):
@@ -75,8 +69,16 @@ class World:
     
     def world(self):
         return self.space
+    
+clients=[]
+myWorld = World()       
+    
+def send_all(msg):
+    for client in clients:
+        client.put( msg )
 
-myWorld = World()        
+def send_all_json(obj):
+    send_all( json.dumps(obj) ) 
 
 def set_listener( entity, data ):
     ''' do something with the update ! '''
@@ -89,17 +91,19 @@ def hello():
     '''Return something coherent here.. perhaps redirect to /static/index.html '''
     return flask.redirect("/static/index.html")
 
-def read_ws(ws,client):
+def read_ws(ws):
     '''A greenlet function that reads from the websocket and updates the world'''
     # XXX: TODO IMPLEMENT ME
     try:
         while True:
             msg = ws.receive()
+            print("WS RECV: %s" % msg)
             if (msg is not None):
                 packet = json.loads(msg)
-                send_to_all(packet)
+                send_all_json(packet)
                 for key, value in packet.items():
                     myWorld.set(key, value)
+                
             else:
                 break
             
@@ -114,7 +118,7 @@ def subscribe_socket(ws):
        websocket and read updates from the websocket '''
     client = Client()
     clients.append(client)
-    g = gevent.spawn(read_ws,ws,client)  # spawn a new process
+    g = gevent.spawn(read_ws,ws)  # spawn a new process
         
     try:
         while True:
@@ -122,7 +126,7 @@ def subscribe_socket(ws):
             ws.send(msg)
             
     except Exception as e:# WebSocketError as e:
-        print("WS Error %s" % e)
+        print("web socket Error %s" % e)
     finally:
         clients.remove(client)
         gevent.kill(g)    # terminate the process
